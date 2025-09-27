@@ -41,7 +41,7 @@ const upload = multer({
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/auth/google/callback'  // ✅ Environment variable
+  process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/auth/google/callback'
 );
 
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
@@ -49,29 +49,49 @@ const drive = google.drive({ version: 'v3', auth: oauth2Client });
 // Persistent token storage
 const TOKENS_FILE = path.join(__dirname, 'tokens.json');
 
-// Load tokens from file on startup
+// Enhanced token loading for both production and development
 let tokens = null;
 const loadTokens = () => {
   try {
+    // In production, try environment variables first
+    if (process.env.NODE_ENV === 'production' && process.env.GOOGLE_TOKENS) {
+      tokens = JSON.parse(process.env.GOOGLE_TOKENS);
+      console.log('✅ Tokens loaded from environment variables');
+      return;
+    }
+    
+    // In development, load from file
     if (fs.existsSync(TOKENS_FILE)) {
       const data = fs.readFileSync(TOKENS_FILE, 'utf8');
       tokens = JSON.parse(data);
-      console.log('Tokens loaded from file');
+      console.log('✅ Tokens loaded from file');
     }
   } catch (error) {
-    console.error('Error loading tokens:', error);
+    console.error('❌ Error loading tokens:', error);
     tokens = null;
   }
 };
 
-// Save tokens to file
+// Enhanced token saving for both production and development
 const saveTokens = (newTokens) => {
   try {
     tokens = newTokens;
-    fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens, null, 2));
-    console.log('Tokens saved to file');
+    
+    if (process.env.NODE_ENV === 'production') {
+      // In production, log tokens for manual addition to environment variables
+      console.log('\n🔐 COPY THIS TO RENDER ENVIRONMENT VARIABLES:');
+      console.log('Variable Name: GOOGLE_TOKENS');
+      console.log('Variable Value:');
+      console.log(JSON.stringify(newTokens));
+      console.log('\nGo to Render Dashboard → Environment → Add above as GOOGLE_TOKENS');
+      console.log('Then redeploy your service for the tokens to persist.\n');
+    } else {
+      // In development, save to file
+      fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens, null, 2));
+      console.log('✅ Tokens saved to file');
+    }
   } catch (error) {
-    console.error('Error saving tokens:', error);
+    console.error('❌ Error saving tokens:', error);
   }
 };
 
@@ -229,20 +249,48 @@ app.get('/auth/google/callback', async (req, res) => {
     
     console.log('Tokens received and saved:', !!newTokens.access_token);
     
-    res.send(`
-      <html>
-        <body>
-          <h2>Google Drive Authentication Successful!</h2>
-          <p>Your authentication has been saved permanently. You can now close this window and return to the application.</p>
-          <p><strong>You will never need to authenticate with Google again!</strong></p>
-          <script>
-            setTimeout(() => {
-              window.close();
-            }, 3000);
-          </script>
-        </body>
-      </html>
-    `);
+    // Different messages for production vs development
+    const isProduction = process.env.NODE_ENV === 'production';
+    const message = isProduction 
+      ? `
+        <html>
+          <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px;">
+            <h2 style="color: #4CAF50;">Google Drive Authentication Successful!</h2>
+            <p><strong>Important:</strong> To make this authentication permanent in production:</p>
+            <ol>
+              <li>Check your <strong>Render service logs</strong> for the GOOGLE_TOKENS environment variable</li>
+              <li>Copy the entire token string from the logs</li>
+              <li>Go to your <strong>Render Dashboard → Environment</strong></li>
+              <li>Add a new environment variable named <strong>GOOGLE_TOKENS</strong></li>
+              <li>Paste the token string as the value</li>
+              <li><strong>Redeploy your service</strong></li>
+            </ol>
+            <p style="color: #ff6b6b;"><strong>Without this step, you'll need to re-authenticate after each deployment!</strong></p>
+            <p>You can now close this window and return to the application.</p>
+            <script>
+              setTimeout(() => {
+                window.close();
+              }, 15000);
+            </script>
+          </body>
+        </html>
+      `
+      : `
+        <html>
+          <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px;">
+            <h2 style="color: #4CAF50;">Google Drive Authentication Successful!</h2>
+            <p>Your authentication has been saved locally. You can now close this window and return to the application.</p>
+            <p><strong>You will never need to authenticate with Google again in development!</strong></p>
+            <script>
+              setTimeout(() => {
+                window.close();
+              }, 3000);
+            </script>
+          </body>
+        </html>
+      `;
+    
+    res.send(message);
   } catch (error) {
     console.error('Error during OAuth callback:', error);
     res.status(500).send('Authentication failed');
@@ -911,5 +959,6 @@ app.get('/api/folders/tree', requireAuth, requireGoogleAuth, async (req, res) =>
 // Start server and initialize Google Drive authentication
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   await initializeGoogleAuth();
 });
