@@ -2,6 +2,9 @@
 
 import { useState } from 'react'
 import { FolderPlus, X } from 'lucide-react'
+   import api from '../../lib/api'
+
+
 
 interface CreateFolderProps {
   onClose: () => void
@@ -26,7 +29,7 @@ export default function CreateFolder({ onClose, onCreate, currentFolder }: Creat
     setError('')
 
     try {
-      const response = await fetch('http://localhost:5000/api/folders', {
+const response = await fetch(api.getUrl('/api/folders'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

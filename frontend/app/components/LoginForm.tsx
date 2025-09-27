@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Lock, Eye, EyeOff } from 'lucide-react'
+import api from '../../lib/api'
 
 interface LoginFormProps {
   onLogin: () => void
@@ -19,8 +20,8 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
     setError('')
 
     try {
-      const response = await fetch('http://localhost:5000/api/login', {
-        method: 'POST',
+const response = await fetch(api.getUrl('/api/login'), {
+            method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },

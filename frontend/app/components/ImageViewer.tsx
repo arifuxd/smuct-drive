@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { X, ZoomIn, ZoomOut, RotateCw, Download, Maximize } from 'lucide-react'
+import api from '../../lib/api'
 
 interface ImageViewerProps {
   isVisible: boolean
@@ -46,7 +47,7 @@ export default function ImageViewer({ isVisible, fileId, fileName, onClose }: Im
 
   const handleDownload = () => {
     const link = document.createElement('a')
-    link.href = `http://localhost:5000/api/download/${fileId}`
+link.href = api.getUrl(`/api/download/${fileId}`)
     link.download = fileName
     document.body.appendChild(link)
     link.click()
@@ -177,7 +178,7 @@ export default function ImageViewer({ isVisible, fileId, fileName, onClose }: Im
       >
         <img
           ref={imageRef}
-          src={`http://localhost:5000/api/view/${fileId}`}
+src={api.getUrl(`/api/view/${fileId}`)}
           alt={fileName}
           className="max-w-full max-h-full object-contain select-none"
           style={{

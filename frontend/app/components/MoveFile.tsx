@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Move, X, Folder, ChevronRight } from 'lucide-react'
+import api from '../../lib/api'
 
 interface FolderItem {
   id: string
@@ -28,8 +29,8 @@ export default function MoveFile({ onClose, onMove, fileId }: MoveFileProps) {
 
   const fetchFolderTree = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/folders/tree', {
-        credentials: 'include'
+const response = await fetch(api.getUrl('/api/folders/tree'), {
+          credentials: 'include'
       })
       
       if (response.ok) {
@@ -53,8 +54,8 @@ export default function MoveFile({ onClose, onMove, fileId }: MoveFileProps) {
     setError('')
 
     try {
-      const response = await fetch(`http://localhost:5000/api/files/${fileId}/move`, {
-        method: 'PATCH',
+const response = await fetch(api.getUrl(`/api/files/${fileId}/move`), {
+          method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },

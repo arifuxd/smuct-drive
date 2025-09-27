@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { X, Play, Pause, Volume2, VolumeX, Maximize, RotateCcw } from 'lucide-react'
+import api from '../../lib/api'
 
 interface VideoPlayerProps {
   isVisible: boolean
@@ -184,8 +185,7 @@ export default function VideoPlayer({ isVisible, fileId, fileName, onClose }: Vi
           }}
           onClick={togglePlay}
         >
-          <source src={`http://localhost:5000/api/stream/${fileId}`} type="video/mp4" />
-          Your browser does not support the video tag.
+<source src={api.getUrl(`/api/stream/${fileId}`)} type="video/mp4" />          Your browser does not support the video tag.
         </video>
 
         {/* Controls overlay */}
