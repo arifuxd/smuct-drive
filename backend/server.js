@@ -645,10 +645,30 @@ app.get('/api/download/folder/:folderId', requireAuth, requireGoogleAuth, async 
     if (folder.data.mimeType !== 'application/vnd.google-apps.folder') {
       return res.status(400).json({ error: 'Not a folder' });
     }
+
+    const getTotalSize = async (folderId) => {
+      let totalSize = 0;
+      const response = await drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: 'files(id,name,mimeType,size,parents)'
+      });
+
+      for (const file of response.data.files) {
+        if (file.mimeType === 'application/vnd.google-apps.folder') {
+          totalSize += await getTotalSize(file.id);
+        } else {
+          totalSize += parseInt(file.size, 10);
+        }
+      }
+      return totalSize;
+    };
+
+    const totalSize = await getTotalSize(folderId);
     
     // Set headers for ZIP download
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${folder.data.name}.zip"`);
+    res.setHeader('Content-Length', totalSize);
     
     // Create ZIP archive
     const archive = archiver('zip', {
@@ -666,44 +686,30 @@ app.get('/api/download/folder/:folderId', requireAuth, requireGoogleAuth, async 
     
     // Recursively add files to archive
     const addFilesToArchive = async (folderId, folderPath = '') => {
-      try {
-        const response = await drive.files.list({
-          q: `'${folderId}' in parents and trashed=false`,
-          fields: 'files(id,name,mimeType,parents)'
-        });
-        
-        for (const file of response.data.files) {
-          const filePath = folderPath ? `${folderPath}/${file.name}` : file.name;
-          
-          if (file.mimeType === 'application/vnd.google-apps.folder') {
-            // Recursively add subfolder contents
-            await addFilesToArchive(file.id, filePath);
-          } else {
-            try {
-              // Get file content
-              const fileResponse = await drive.files.get({
-                fileId: file.id,
-                alt: 'media'
-              }, { responseType: 'stream' });
-              
-              // Add file to archive
-              archive.append(fileResponse.data, { name: filePath });
-            } catch (fileError) {
-              console.error(`Error adding file ${file.name} to archive:`, fileError);
-              // Continue with other files even if one fails
-            }
-          }
+      const response = await drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: 'files(id,name,mimeType,parents)'
+      });
+
+      await Promise.all(response.data.files.map(async (file) => {
+        const filePath = folderPath ? `${folderPath}/${file.name}` : file.name;
+        if (file.mimeType === 'application/vnd.google-apps.folder') {
+          await addFilesToArchive(file.id, filePath);
+        } else {
+          const fileResponse = await drive.files.get(
+            { fileId: file.id, alt: 'media' },
+            { responseType: 'stream' }
+          );
+          archive.append(fileResponse.data, { name: filePath });
         }
-      } catch (error) {
-        console.error('Error processing folder:', error);
-      }
+      }));
     };
     
     // Start adding files
     await addFilesToArchive(folderId);
     
     // Finalize the archive
-    await archive.finalize();
+    archive.finalize();
     
   } catch (error) {
     console.error('Error downloading folder:', error);
@@ -720,8 +726,18 @@ app.post('/api/download/multiple', requireAuth, requireGoogleAuth, async (req, r
       return res.status(400).json({ error: 'File IDs are required' });
     }
 
+    let totalSize = 0;
+    for (const fileId of fileIds) {
+        const file = await drive.files.get({
+            fileId: fileId,
+            fields: 'size'
+        });
+        totalSize += parseInt(file.data.size, 10);
+    }
+
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', 'attachment; filename="download.zip"');
+    res.setHeader('Content-Length', totalSize);
 
     const archive = archiver('zip', {
       zlib: { level: 9 } // Sets the compression level.
@@ -733,24 +749,20 @@ app.post('/api/download/multiple', requireAuth, requireGoogleAuth, async (req, r
 
     archive.pipe(res);
 
-    for (const fileId of fileIds) {
+    await Promise.all(fileIds.map(async (fileId) => {
       const file = await drive.files.get({
         fileId: fileId,
         fields: 'name, mimeType'
       });
 
-      if (file.data.mimeType === 'application/vnd.google-apps.folder') {
-        // For now, we skip folders in multi-download
-        continue;
+      if (file.data.mimeType !== 'application/vnd.google-apps.folder') {
+        const fileStream = await drive.files.get(
+          { fileId: fileId, alt: 'media' },
+          { responseType: 'stream' }
+        );
+        archive.append(fileStream.data, { name: file.data.name });
       }
-
-      const fileStream = await drive.files.get(
-        { fileId: fileId, alt: 'media' },
-        { responseType: 'stream' }
-      );
-      
-      archive.append(fileStream.data, { name: file.data.name });
-    }
+    }));
 
     archive.finalize();
 
@@ -899,7 +911,7 @@ app.get('/api/download/:fileId', requireAuth, requireGoogleAuth, async (req, res
     
     const file = await drive.files.get({
       fileId: fileId,
-      fields: 'name,mimeType'
+      fields: 'name,mimeType,size'
     });
     
     const response = await drive.files.get({
@@ -909,6 +921,7 @@ app.get('/api/download/:fileId', requireAuth, requireGoogleAuth, async (req, res
     
     res.setHeader('Content-Disposition', `attachment; filename="${file.data.name}"`);
     res.setHeader('Content-Type', file.data.mimeType);
+    res.setHeader('Content-Length', file.data.size);
     
     response.data.pipe(res);
   } catch (error) {

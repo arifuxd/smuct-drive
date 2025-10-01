@@ -26,6 +26,8 @@ import VideoPlayer from './VideoPlayer'
 import ImageViewer from './ImageViewer'
 import api from '../../lib/api'
 
+import DownloadProgress from './DownloadProgress'
+
 interface FileItem {
   id: string
   name: string
@@ -200,27 +202,15 @@ export default function FileManager({ onLogout }: FileManagerProps) {
     setSelectedFiles([])
   }
 
-  const handleDownload = async (fileId: string, fileName: string) => {
-    try {
-      const response = await fetch(`${api.getUrl('/api/download')}/${fileId}`, {
-        credentials: 'include'
-      })
-      
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = fileName
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-      }
-    } catch (error) {
-      console.error('Download failed:', error)
-    }
-  }
+  const handleDownload = (fileId: string, fileName: string) => {
+    const url = `${api.getUrl('/api/download')}/${fileId}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   const handleDelete = async (fileId: string) => {
     if (!confirm('Are you sure you want to delete this item?')) return
@@ -335,31 +325,15 @@ export default function FileManager({ onLogout }: FileManagerProps) {
     setShowCopyFile(true);
   }
 
-  const handleDownloadFolder = async (fileId: string, fileName: string) => {
-    try {
-      const response = await fetch(`${api.getUrl('/api/download/folder')}/${fileId}`, {
-        credentials: 'include'
-      })
-      
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${fileName}.zip`
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-      } else {
-        const errorData = await response.json()
-        alert(`Failed to download folder: ${errorData.error}`)
-      }
-    } catch (error) {
-      console.error('Download folder error:', error)
-      alert('Failed to download folder. Please try again.')
-    }
-  }
+  const handleDownloadFolder = (fileId: string, fileName: string) => {
+    const url = `${api.getUrl('/api/download/folder')}/${fileId}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fileName}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   const handleCopyFolderLink = async (fileId: string, fileName: string) => {
     try {
