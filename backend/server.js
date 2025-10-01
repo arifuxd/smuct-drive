@@ -646,29 +646,9 @@ app.get('/api/download/folder/:folderId', requireAuth, requireGoogleAuth, async 
       return res.status(400).json({ error: 'Not a folder' });
     }
 
-    const getTotalSize = async (folderId) => {
-      let totalSize = 0;
-      const response = await drive.files.list({
-        q: `'${folderId}' in parents and trashed=false`,
-        fields: 'files(id,name,mimeType,size,parents)'
-      });
-
-      for (const file of response.data.files) {
-        if (file.mimeType === 'application/vnd.google-apps.folder') {
-          totalSize += await getTotalSize(file.id);
-        } else {
-          totalSize += parseInt(file.size, 10);
-        }
-      }
-      return totalSize;
-    };
-
-    const totalSize = await getTotalSize(folderId);
-    
     // Set headers for ZIP download
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${folder.data.name}.zip"`);
-    res.setHeader('Content-Length', totalSize);
     
     // Create ZIP archive
     const archive = archiver('zip', {
@@ -718,26 +698,22 @@ app.get('/api/download/folder/:folderId', requireAuth, requireGoogleAuth, async 
 });
 
 // Download multiple files as a ZIP
-app.post('/api/download/multiple', requireAuth, requireGoogleAuth, async (req, res) => {
+app.get('/api/download/multiple', requireAuth, requireGoogleAuth, async (req, res) => {
   try {
-    const { fileIds } = req.body;
+    const { fileIds } = req.query;
 
-    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+    if (!fileIds) {
       return res.status(400).json({ error: 'File IDs are required' });
     }
 
-    let totalSize = 0;
-    for (const fileId of fileIds) {
-        const file = await drive.files.get({
-            fileId: fileId,
-            fields: 'size'
-        });
-        totalSize += parseInt(file.data.size, 10);
+    const fileIdsArray = fileIds.split(',');
+
+    if (!Array.isArray(fileIdsArray) || fileIdsArray.length === 0) {
+      return res.status(400).json({ error: 'File IDs are required' });
     }
 
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', 'attachment; filename="download.zip"');
-    res.setHeader('Content-Length', totalSize);
 
     const archive = archiver('zip', {
       zlib: { level: 9 } // Sets the compression level.
@@ -749,7 +725,7 @@ app.post('/api/download/multiple', requireAuth, requireGoogleAuth, async (req, r
 
     archive.pipe(res);
 
-    await Promise.all(fileIds.map(async (fileId) => {
+    await Promise.all(fileIdsArray.map(async (fileId) => {
       const file = await drive.files.get({
         fileId: fileId,
         fields: 'name, mimeType'

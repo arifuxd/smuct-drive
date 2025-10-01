@@ -26,7 +26,7 @@ import VideoPlayer from './VideoPlayer'
 import ImageViewer from './ImageViewer'
 import api from '../../lib/api'
 
-import DownloadProgress from './DownloadProgress'
+
 
 interface FileItem {
   id: string
@@ -453,36 +453,18 @@ export default function FileManager({ onLogout }: FileManagerProps) {
     }
   };
 
-  const handleDownloadMultiple = async () => {
-    try {
-      const response = await fetch(api.getUrl('/api/download/multiple'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ fileIds: selectedFiles }),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'download.zip';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        setSelectedFiles([]);
-      } else {
-        const errorData = await response.json();
-        alert(`Failed to download files: ${errorData.error}`);
-      }
-    } catch (error) {
-      console.error('Download multiple error:', error);
-      alert('Failed to download files. Please try again.');
-    }
+  const handleDownloadMultiple = () => {
+    const fileIds = selectedFiles.join(',');
+    const url = `${api.getUrl('/api/download/multiple')}?fileIds=${fileIds}`;
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'download.zip';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    setSelectedFiles([]);
   };
 
   return (
