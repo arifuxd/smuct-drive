@@ -104,7 +104,7 @@ export default function FileManager({ onLogout }: FileManagerProps) {
     fileName: ''
   })
   const [deleteDialog, setDeleteDialog] = useState<{ isVisible: boolean; fileId: string }>({ isVisible: false, fileId: '' })
-  const [infoDialog, setInfoDialog] = useState<{ isVisible: boolean; title: string; message: string }>({ isVisible: false, title: '', message: '' })
+  const [infoDialog, setInfoDialog] = useState<{ isVisible: boolean; title: string; message: string, link?: string }>({ isVisible: false, title: '', message: '' })
   const [deleteMultipleDialog, setDeleteMultipleDialog] = useState<{ isVisible: boolean }>({ isVisible: false })
 
   useEffect(() => {
