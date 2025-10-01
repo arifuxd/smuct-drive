@@ -22,6 +22,7 @@ import MoveFile from './MoveFile'
 import CopyFile from './CopyFile'
 import ContextMenu from './ContextMenu'
 import RenameDialog from './RenameDialog'
+import Storage from './Storage'
 import VideoPlayer from './VideoPlayer'
 import ImageViewer from './ImageViewer'
 import ActionDialog from './ActionDialog'
@@ -623,6 +624,7 @@ export default function FileManager({ onLogout }: FileManagerProps) {
             </div>
           </div>
         </div>
+        <Storage />
         {selectedFiles.length > 0 && (
           <div className="bg-gray-100 border-t border-gray-200">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
@@ -702,7 +704,7 @@ export default function FileManager({ onLogout }: FileManagerProps) {
                           {getFileIcon(file.name, file.isFolder)}
                           <button
                             onClick={() => file.isFolder && navigateToFolder(file.id)}
-                            className={`text-sm font-medium ${file.isFolder 
+                            className={`text-sm font-medium pl-2 ${file.isFolder 
                                 ? 'text-blue-600 hover:text-blue-800 cursor-pointer' 
                                 : 'text-gray-900'}`}
                           >

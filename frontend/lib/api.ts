@@ -37,7 +37,8 @@ const api = {
     },
     stream: '/api/stream',
     view: '/api/view',
-    health: '/api/health'
+    health: '/api/health',
+    storage: '/api/storage'
   }
 };
 

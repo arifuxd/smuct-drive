@@ -1,18 +1,19 @@
-
 import {
   File,
   Folder,
-  Image as ImageIcon,
-  Video as VideoIcon,
-  FileText as DocumentIcon,
-  Archive as ZipIcon,
-  Music as AudioIcon,
-  FileCode as CodeIcon,
+  Image,
+  Play,
+  FileText,
+  FileArchive,
+  Music,
+  FileCode,
 } from 'lucide-react'
 
 export const getFileIcon = (fileName: string, isFolder: boolean) => {
+  const className = "h-6 w-6 text-primary-600 mr-4"
+
   if (isFolder) {
-    return <Folder className="h-5 w-5 text-blue-500 mr-3" />
+    return <Folder className={className} />
   }
 
   const extension = fileName.split('.').pop()?.toLowerCase()
@@ -25,7 +26,7 @@ export const getFileIcon = (fileName: string, isFolder: boolean) => {
     case 'bmp':
     case 'webp':
     case 'svg':
-      return <ImageIcon className="h-5 w-5 text-green-500 mr-3" />
+      return <Image className={className} />
     case 'mp4':
     case 'avi':
     case 'mov':
@@ -33,28 +34,28 @@ export const getFileIcon = (fileName: string, isFolder: boolean) => {
     case 'flv':
     case 'webm':
     case 'mkv':
-      return <VideoIcon className="h-5 w-5 text-purple-500 mr-3" />
+      return <Play className={className} />
     case 'pdf':
-      return <DocumentIcon className="h-5 w-5 text-red-500 mr-3" />
+      return <FileText className={className} />
     case 'doc':
     case 'docx':
-      return <DocumentIcon className="h-5 w-5 text-blue-500 mr-3" />
+      return <FileText className={className} />
     case 'zip':
     case 'rar':
     case '7z':
-      return <ZipIcon className="h-5 w-5 text-yellow-500 mr-3" />
+      return <FileArchive className={className} />
     case 'mp3':
     case 'wav':
     case 'ogg':
-      return <AudioIcon className="h-5 w-5 text-pink-500 mr-3" />
+      return <Music className={className} />
     case 'js':
     case 'jsx':
     case 'ts':
     case 'tsx':
     case 'html':
     case 'css':
-      return <CodeIcon className="h-5 w-5 text-indigo-500 mr-3" />
+      return <FileCode className={className} />
     default:
-      return <File className="h-5 w-5 text-gray-400 mr-3" />
+      return <File className="h-6 w-6 text-gray-500 mr-4" />
   }
 }

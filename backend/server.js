@@ -1161,6 +1161,19 @@ app.get('/api/folders/tree', requireAuth, requireGoogleAuth, async (req, res) =>
   }
 });
 
+// Get storage quota
+app.get('/api/storage', requireAuth, requireGoogleAuth, async (req, res) => {
+  try {
+    const response = await drive.about.get({
+      fields: 'storageQuota'
+    });
+    res.json(response.data.storageQuota);
+  } catch (error) {
+    console.error('Error fetching storage quota:', error);
+    res.status(500).json({ error: 'Failed to fetch storage quota' });
+  }
+});
+
 // Start server and initialize Google Drive authentication
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
