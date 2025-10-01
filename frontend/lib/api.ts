@@ -1,16 +1,16 @@
 // API configuration for SMUCT Drive
 // Handles environment-based API URLs
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-export const api = {
+const api = {
   baseURL: API_BASE_URL,
-  
+
   // Helper function to get full API URL
   getUrl: (endpoint: string) => {
-    return `${API_BASE_URL}${endpoint}`
+    return `${API_BASE_URL}${endpoint}`;
   },
-  
+
   // Common API endpoints
   endpoints: {
     auth: {
@@ -39,6 +39,6 @@ export const api = {
     view: '/api/view',
     health: '/api/health'
   }
-}
+};
 
-export default api
+export default api;

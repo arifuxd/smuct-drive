@@ -395,6 +395,131 @@ app.get('/api/files', requireAuth, requireGoogleAuth, async (req, res) => {
   }
 });
 
+// Initiate file upload and get resumable URL
+// Proxied resumable upload
+app.post('/api/upload/proxied', requireAuth, requireGoogleAuth, (req, res) => {
+  try {
+    const {
+      'x-file-name': fileName,
+      'x-file-type': fileType,
+      'x-folder-id': folderId,
+      'content-length': contentLength,
+    } = req.headers;
+
+    const targetFolderId = (folderId && typeof folderId === 'string' && folderId.trim() !== '') ? folderId : process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    if (!fileName || !fileType || !contentLength) {
+      return res.status(400).json({ error: 'File name, type, and content length are required in headers' });
+    }
+
+    if (!targetFolderId || targetFolderId.trim() === '') {
+      return res.status(400).json({ error: 'Google Drive folder ID not configured' });
+    }
+
+    const fileMetadata = {
+      name: Array.isArray(fileName) ? fileName[0] : fileName,
+      parents: [targetFolderId],
+    };
+
+    const accessToken = oauth2Client.credentials.access_token;
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Google Drive authentication is missing access token.' });
+    }
+
+    const https = require('https');
+
+    // Step 1: Initiate Resumable Upload with Google Drive
+    const initiateOptions = {
+      method: 'POST',
+      hostname: 'www.googleapis.com',
+      path: '/upload/drive/v3/files?uploadType=resumable',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': fileType,
+      },
+    };
+
+    const initiateRequest = https.request(initiateOptions, (initiateRes) => {
+      if (initiateRes.statusCode === 200) {
+        const uploadUrl = initiateRes.headers.location;
+        if (uploadUrl) {
+          // Step 2: Stream the file from the client to Google Drive
+          const { host, pathname, search } = new URL(uploadUrl);
+          const uploadOptions = {
+            method: 'PUT',
+            hostname: host,
+            path: `${pathname}${search}`,
+            headers: {
+              'Content-Length': contentLength,
+            },
+          };
+
+          const uploadRequest = https.request(uploadOptions, (uploadRes) => {
+            let responseBody = '';
+            uploadRes.on('data', (chunk) => {
+              responseBody += chunk;
+            });
+            uploadRes.on('end', () => {
+              if (uploadRes.statusCode === 200 || uploadRes.statusCode === 201) {
+                try {
+                  res.status(200).json(JSON.parse(responseBody));
+                } catch (e) {
+                  res.status(200).json({ success: true, data: responseBody });
+                }
+              } else {
+                console.error(`Google Drive upload failed with status ${uploadRes.statusCode}:`, responseBody);
+                res.status(uploadRes.statusCode).json({ error: 'Upload to Google Drive failed', details: responseBody });
+              }
+            });
+          });
+
+          uploadRequest.on('error', (error) => {
+            console.error('Error streaming to Google Drive:', error);
+            if (!res.headersSent) {
+              res.status(500).json({ error: 'Failed to stream to Google Drive' });
+            }
+          });
+
+          req.pipe(uploadRequest);
+
+        } else {
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Could not get upload URL from Google' });
+          }
+        }
+      } else {
+        let errorData = '';
+        initiateRes.on('data', (chunk) => {
+          errorData += chunk;
+        });
+        initiateRes.on('end', () => {
+          console.error(`Google Drive initiation failed with status ${initiateRes.statusCode}:`, errorData);
+          if (!res.headersSent) {
+            res.status(initiateRes.statusCode).json({ error: 'Failed to initiate upload with Google', details: errorData });
+          }
+        });
+      }
+    });
+
+    initiateRequest.on('error', (error) => {
+      console.error('Error making request to Google for upload initiation:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to make request to Google for upload initiation' });
+      }
+    });
+
+    initiateRequest.write(JSON.stringify(fileMetadata));
+    initiateRequest.end();
+
+  } catch (error) {
+    console.error('Error in proxied upload:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed in proxied upload' });
+    }
+  }
+});
+
 // Upload file
 app.post('/api/upload', requireAuth, requireGoogleAuth, upload.single('file'), async (req, res) => {
   try {

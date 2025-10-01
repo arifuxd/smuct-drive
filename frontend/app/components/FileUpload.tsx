@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { Upload, X, File } from 'lucide-react'
 import UploadProgress from './UploadProgress'
 import api from '../../lib/api'
+import axios from 'axios'
 
 interface FileUploadProps {
   onClose: () => void
@@ -91,174 +92,101 @@ export default function FileUpload({ onClose, onUpload, currentFolder }: FileUpl
   }
 
   const handleUpload = async () => {
-    if (files.length === 0) return
+    if (files.length === 0) return;
 
-    setUploading(true)
-    const progress: { [key: string]: UploadStatus } = {}
+    setUploading(true);
+    const newProgress = { ...uploadProgress };
+
+    for (const file of files) {
+      if (newProgress[file.name]?.status === 'completed') continue;
+
+      const startTime = Date.now();
+      newProgress[file.name] = {
+        progress: 0,
+        uploadedBytes: 0,
+        totalBytes: file.size,
+        estimatedTimeRemaining: 0,
+        uploadSpeed: 0,
+        startTime,
+        lastUpdateTime: startTime,
+        lastUploadedBytes: 0,
+        status: 'uploading',
+        errorMessage: undefined,
+      };
+    }
+    setUploadProgress(newProgress);
+
+    const uploadPromises = files.map(file => (
+      new Promise<void>(async (resolve, reject) => {
+        try {
+          const response = await axios.post(api.getUrl('/api/upload/proxied'), file, {
+            headers: {
+              'Content-Type': file.type,
+              'X-File-Name': file.name,
+              'X-File-Type': file.type,
+              'X-Folder-Id': currentFolder,
+            },
+            withCredentials: true,
+            onUploadProgress: (progressEvent) => {
+              const { loaded, total } = progressEvent;
+              const progress = total ? (loaded / total) * 100 : 0;
+              const currentTime = Date.now();
+              const timeElapsed = (currentTime - newProgress[file.name].startTime) / 1000;
+              const uploadSpeed = timeElapsed > 0 ? loaded / timeElapsed : 0;
+              const remainingBytes = total ? total - loaded : 0;
+              const estimatedTimeRemaining = uploadSpeed > 0 ? remainingBytes / uploadSpeed : 0;
+
+              setUploadProgress(prev => ({
+                ...prev,
+                [file.name]: {
+                  ...prev[file.name],
+                  progress,
+                  uploadedBytes: loaded,
+                  totalBytes: total || file.size,
+                  uploadSpeed,
+                  estimatedTimeRemaining,
+                  status: 'uploading',
+                },
+              }));
+            },
+          });
+
+          if (response.status === 200 || response.status === 201) {
+            setUploadProgress(prev => ({
+              ...prev,
+              [file.name]: { ...prev[file.name], status: 'completed' },
+            }));
+            resolve();
+          } else {
+            throw new Error(`Upload failed with status ${response.status}`);
+          }
+        } catch (error: any) {
+          console.error(`Upload failed for ${file.name}:`, error);
+          setUploadProgress(prev => ({
+            ...prev,
+            [file.name]: {
+              ...prev[file.name],
+              status: 'error',
+              errorMessage: error.response?.data?.error || error.message || 'Failed to upload',
+            },
+          }));
+          reject(error);
+        }
+      })
+    ));
 
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        const startTime = Date.now()
-        
-        // Initialize progress tracking
-        progress[file.name] = {
-          progress: 0,
-          uploadedBytes: 0,
-          totalBytes: file.size,
-          estimatedTimeRemaining: 0,
-          uploadSpeed: 0,
-          startTime: startTime,
-          lastUpdateTime: startTime,
-          lastUploadedBytes: 0,
-          status: 'uploading'
-        }
-        setUploadProgress({ ...progress })
-
-        // Create XMLHttpRequest for progress tracking
-        const xhr = new XMLHttpRequest()
-        
-        // Track upload progress
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const uploadedBytes = event.loaded
-            const totalBytes = event.total
-            const currentProgress = (uploadedBytes / totalBytes) * 100
-            const currentTime = Date.now()
-            
-            // Calculate upload speed
-            const timeElapsed = (currentTime - startTime) / 1000 // seconds
-            const uploadSpeed = timeElapsed > 0 ? uploadedBytes / timeElapsed : 0
-            
-            // Calculate estimated time remaining
-            const remainingBytes = totalBytes - uploadedBytes
-            const estimatedTimeRemaining = uploadSpeed > 0 ? remainingBytes / uploadSpeed : 0
-            
-            // Update progress
-            progress[file.name] = {
-              progress: currentProgress,
-              uploadedBytes: uploadedBytes,
-              totalBytes: totalBytes,
-              estimatedTimeRemaining: estimatedTimeRemaining,
-              uploadSpeed: uploadSpeed,
-              startTime: startTime,
-              lastUpdateTime: currentTime,
-              lastUploadedBytes: uploadedBytes,
-              status: 'uploading'
-            }
-            
-            setUploadProgress({ ...progress })
-          }
-        })
-
-        // Handle upload completion
-        const uploadPromise = new Promise<void>((resolve, reject) => {
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              // File uploaded to server, now processing
-              progress[file.name] = {
-                ...progress[file.name],
-                progress: 100,
-                uploadedBytes: file.size,
-                estimatedTimeRemaining: 0,
-                status: 'processing'
-              }
-              setUploadProgress({ ...progress })
-              
-              // Parse response
-              const result = JSON.parse(xhr.responseText)
-              // Upload successful
-              
-              // Set to completed after a short delay
-              setTimeout(() => {
-                progress[file.name] = {
-                  ...progress[file.name],
-                  status: 'completed'
-                }
-                setUploadProgress({ ...progress })
-                resolve()
-              }, 1000) // Give a moment to show processing state
-            } else {
-              const errorData = JSON.parse(xhr.responseText)
-              console.error(`Failed to upload ${file.name}:`, errorData)
-              
-              // Set error state
-              progress[file.name] = {
-                ...progress[file.name],
-                status: 'error',
-                errorMessage: errorData.error || 'Upload failed'
-              }
-              setUploadProgress({ ...progress })
-              
-              if (errorData.needsAuth) {
-                alert(`Authentication required: ${errorData.error}\n\nPlease re-authenticate with Google Drive.`)
-                onClose()
-                window.location.href = api.getUrl('/auth/google')
-              } else {
-                alert(`Failed to upload ${file.name}: ${errorData.error || 'Unknown error'}`)
-              }
-              reject(new Error(errorData.error || 'Upload failed'))
-            }
-          }
-          
-          xhr.onerror = () => {
-            console.error('Upload error:', xhr.statusText)
-            
-            // Set error state
-            progress[file.name] = {
-              ...progress[file.name],
-              status: 'error',
-              errorMessage: xhr.statusText || 'Network error'
-            }
-            setUploadProgress({ ...progress })
-            
-            alert(`Upload failed: ${xhr.statusText}`)
-            reject(new Error(xhr.statusText))
-          }
-        })
-
-        // Prepare form data
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('folderId', currentFolder)
-
-        // Uploading file to folder
-
-        // Start upload
-        xhr.open('POST', api.getUrl('/api/upload'), true)
-        xhr.withCredentials = true
-        
-        // Set timeout for large files (30 minutes)
-        xhr.timeout = 30 * 60 * 1000
-        
-        xhr.ontimeout = () => {
-          console.error('Upload timeout for file:', file.name)
-          progress[file.name] = {
-            ...progress[file.name],
-            status: 'error',
-            errorMessage: 'Upload timeout - file too large or connection slow'
-          }
-          setUploadProgress({ ...progress })
-          alert(`Upload timeout for ${file.name}. The file may be too large or your connection is slow.`)
-        }
-        
-        xhr.send(formData)
-
-        // Wait for upload to complete
-        await uploadPromise
-      }
-
-      // Wait a moment to show completed state
+      await Promise.all(uploadPromises);
       setTimeout(() => {
-        onUpload()
-        setUploading(false)
-      }, 2000)
+        onUpload();
+        onClose();
+      }, 1000);
     } catch (error) {
-      console.error('Upload error:', error)
-      alert(`Upload failed: ${error.message}`)
-      setUploading(false)
+      console.error('One or more uploads failed');
+    } finally {
+      setUploading(false);
     }
-  }
+  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 B'
