@@ -711,6 +711,57 @@ app.get('/api/download/folder/:folderId', requireAuth, requireGoogleAuth, async 
   }
 });
 
+// Download multiple files as a ZIP
+app.post('/api/download/multiple', requireAuth, requireGoogleAuth, async (req, res) => {
+  try {
+    const { fileIds } = req.body;
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({ error: 'File IDs are required' });
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="download.zip"');
+
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Sets the compression level.
+    });
+
+    archive.on('error', (err) => {
+      throw err;
+    });
+
+    archive.pipe(res);
+
+    for (const fileId of fileIds) {
+      const file = await drive.files.get({
+        fileId: fileId,
+        fields: 'name, mimeType'
+      });
+
+      if (file.data.mimeType === 'application/vnd.google-apps.folder') {
+        // For now, we skip folders in multi-download
+        continue;
+      }
+
+      const fileStream = await drive.files.get(
+        { fileId: fileId, alt: 'media' },
+        { responseType: 'stream' }
+      );
+      
+      archive.append(fileStream.data, { name: file.data.name });
+    }
+
+    archive.finalize();
+
+  } catch (error) {
+    console.error('Error downloading multiple files:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to download files' });
+    }
+  }
+});
+
 // Get shareable download link for folder (ZIP)
 app.get('/api/folders/:folderId/share', requireAuth, requireGoogleAuth, async (req, res) => {
   try {
@@ -965,11 +1016,22 @@ app.post('/api/files/:fileId/copy', requireAuth, requireGoogleAuth, async (req, 
       fields: 'name,mimeType'
     });
     
+    const originalName = originalFile.data.name;
+    const lastDotIndex = originalName.lastIndexOf('.');
+    let newName;
+    if (lastDotIndex !== -1) {
+      const name = originalName.substring(0, lastDotIndex);
+      const extension = originalName.substring(lastDotIndex);
+      newName = `${name} (Copy)${extension}`;
+    } else {
+      newName = `${originalName} (Copy)`;
+    }
+
     // Copy file/folder
     const copyResponse = await drive.files.copy({
       fileId: fileId,
       resource: {
-        name: `${originalFile.data.name} (Copy)`,
+        name: newName,
         parents: [targetFolderId]
       },
       fields: 'id,name,mimeType,createdTime'

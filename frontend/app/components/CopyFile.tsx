@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Move, X, Folder, ChevronRight } from 'lucide-react'
+import { Copy, X, Folder, ChevronRight } from 'lucide-react'
 import api from '../../lib/api'
 
 interface FolderItem {
@@ -10,13 +10,13 @@ interface FolderItem {
   children?: FolderItem[]
 }
 
-interface MoveFileProps {
+interface CopyFileProps {
   onClose: () => void
-  onMove: () => void
+  onCopy: () => void
   fileIds: string[]
 }
 
-export default function MoveFile({ onClose, onMove, fileIds }: MoveFileProps) {
+export default function CopyFile({ onClose, onCopy, fileIds }: CopyFileProps) {
   const [folders, setFolders] = useState<FolderItem[]>([])
   const [selectedFolder, setSelectedFolder] = useState<string>('')
   const [loading, setLoading] = useState(false)
@@ -55,19 +55,19 @@ export default function MoveFile({ onClose, onMove, fileIds }: MoveFileProps) {
 
     try {
       await Promise.all(fileIds.map(fileId => 
-        fetch(api.getUrl(`/api/files/${fileId}/move`), {
-          method: 'PATCH',
+        fetch(api.getUrl(`/api/files/${fileId}/copy`), {
+          method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           credentials: 'include',
           body: JSON.stringify({
-            newParentId: selectedFolder
+            destinationFolderId: selectedFolder
           }),
         })
       ));
 
-      onMove()
+      onCopy()
     } catch (error) {
       setError('Network error. Please try again.')
     } finally {
@@ -128,7 +128,7 @@ export default function MoveFile({ onClose, onMove, fileIds }: MoveFileProps) {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Move Items</h3>
+          <h3 className="text-lg font-medium text-gray-900">Copy Items</h3>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
@@ -173,7 +173,7 @@ export default function MoveFile({ onClose, onMove, fileIds }: MoveFileProps) {
               disabled={loading || !selectedFolder}
               className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Moving...' : `Move ${fileIds.length} Items`}
+              {loading ? 'Copying...' : `Copy ${fileIds.length} Items`}
             </button>
           </div>
         </form>

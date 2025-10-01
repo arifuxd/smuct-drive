@@ -18,31 +18,44 @@ export default function RenameDialog({
   onClose,
   onRename
 }: RenameDialogProps) {
-  const [newName, setNewName] = useState(currentName)
+  const [name, setName] = useState('');
+  const [extension, setExtension] = useState('');
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    setNewName(currentName)
-  }, [currentName])
+    const lastDotIndex = currentName.lastIndexOf('.');
+    if (lastDotIndex !== -1) {
+      setName(currentName.substring(0, lastDotIndex));
+      setExtension(currentName.substring(lastDotIndex));
+    } else {
+      setName(currentName);
+      setExtension('');
+    }
+  }, [currentName]);
 
   useEffect(() => {
     if (isVisible && inputRef.current) {
       inputRef.current.focus()
-      inputRef.current.select()
+      // Select only the name part without the extension
+      const nameWithoutExtension = currentName.lastIndexOf('.') !== -1 
+        ? currentName.substring(0, currentName.lastIndexOf('.'))
+        : currentName;
+      inputRef.current.setSelectionRange(0, nameWithoutExtension.length);
     }
-  }, [isVisible])
+  }, [isVisible, currentName])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (newName.trim() === '' || newName.trim() === currentName) {
+    const newFullName = name.trim() + extension;
+    if (name.trim() === '' || newFullName === currentName) {
       onClose()
       return
     }
 
     setLoading(true)
     try {
-      await onRename(fileId, newName.trim())
+      await onRename(fileId, newFullName)
       onClose()
     } catch (error) {
       console.error('Rename failed:', error)
@@ -80,17 +93,24 @@ export default function RenameDialog({
             <label htmlFor="newName" className="block text-sm font-medium text-gray-700 mb-2">
               New name
             </label>
-            <input
-              ref={inputRef}
-              id="newName"
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              placeholder="Enter new name"
-              disabled={loading}
-            />
+            <div className="flex items-center">
+              <input
+                ref={inputRef}
+                id="newName"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="w-full px-3 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Enter new name"
+                disabled={loading}
+              />
+              {extension && (
+                <span className="px-3 py-2 border border-l-0 border-gray-300 bg-gray-50 text-gray-500 rounded-r-lg">
+                  {extension}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="flex justify-end space-x-3">
@@ -104,7 +124,7 @@ export default function RenameDialog({
             </button>
             <button
               type="submit"
-              disabled={loading || newName.trim() === '' || newName.trim() === currentName}
+              disabled={loading || name.trim() === '' || (name.trim() + extension) === currentName}
               className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Renaming...' : 'Rename'}

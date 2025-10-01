@@ -15,14 +15,11 @@ import {
   ArrowLeft,
   Copy,
   Home,
-  Archive,
-  Link,
-  Play,
-  Eye
 } from 'lucide-react'
 import FileUpload from './FileUpload'
 import CreateFolder from './CreateFolder'
 import MoveFile from './MoveFile'
+import CopyFile from './CopyFile'
 import ContextMenu from './ContextMenu'
 import RenameDialog from './RenameDialog'
 import VideoPlayer from './VideoPlayer'
@@ -58,7 +55,8 @@ export default function FileManager({ onLogout }: FileManagerProps) {
   const [showUpload, setShowUpload] = useState(false)
   const [showCreateFolder, setShowCreateFolder] = useState(false)
   const [showMoveFile, setShowMoveFile] = useState(false)
-  const [moveFileId, setMoveFileId] = useState<string>('')
+  const [showCopyFile, setShowCopyFile] = useState(false)
+
   const [authError, setAuthError] = useState<string>('')
   const [needsReauth, setNeedsReauth] = useState(false)
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([])
@@ -100,7 +98,6 @@ export default function FileManager({ onLogout }: FileManagerProps) {
     fileName: ''
   })
 
-  // Initialize folder from URL parameters
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const folderParam = urlParams.get('folder')
@@ -114,7 +111,6 @@ export default function FileManager({ onLogout }: FileManagerProps) {
     fetchBreadcrumb()
   }, [currentFolder])
 
-  // Handle browser back/forward buttons
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       if (event.state && event.state.folderId !== undefined) {
@@ -195,7 +191,13 @@ export default function FileManager({ onLogout }: FileManagerProps) {
   const handleMoveFile = () => {
     fetchFiles()
     setShowMoveFile(false)
-    setMoveFileId('')
+    setSelectedFiles([])
+  }
+
+  const handleCopyFile = () => {
+    fetchFiles()
+    setShowCopyFile(false)
+    setSelectedFiles([])
   }
 
   const handleDownload = async (fileId: string, fileName: string) => {
@@ -260,13 +262,9 @@ export default function FileManager({ onLogout }: FileManagerProps) {
   }
 
   const navigateToFolder = (folderId: string) => {
-    // Add current folder to history
     if (currentFolder !== folderId) {
       setFolderHistory(prev => [...prev, currentFolder])
-      
-      // Update browser history
       window.history.pushState({ folderId }, '', `?folder=${folderId}`)
-      
       setCurrentFolder(folderId)
     }
   }
@@ -275,10 +273,7 @@ export default function FileManager({ onLogout }: FileManagerProps) {
     if (folderHistory.length > 0) {
       const previousFolder = folderHistory[folderHistory.length - 1]
       setFolderHistory(prev => prev.slice(0, -1))
-      
-      // Update browser history
       window.history.pushState({ folderId: previousFolder }, '', `?folder=${previousFolder}`)
-      
       setCurrentFolder(previousFolder)
     }
   }
@@ -324,7 +319,7 @@ export default function FileManager({ onLogout }: FileManagerProps) {
       })
 
       if (response.ok) {
-        fetchFiles() // Refresh the file list
+        fetchFiles()
       } else {
         const errorData = await response.json()
         alert(`Failed to rename: ${errorData.error}`)
@@ -335,28 +330,9 @@ export default function FileManager({ onLogout }: FileManagerProps) {
     }
   }
 
-  const handleCopy = async (fileId: string) => {
-    try {
-      const response = await fetch(`${api.getUrl('/api/files')}/${fileId}/copy`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ destinationFolderId: currentFolder }),
-      })
-
-      if (response.ok) {
-        fetchFiles() // Refresh the file list
-        alert('File copied successfully!')
-      } else {
-        const errorData = await response.json()
-        alert(`Failed to copy: ${errorData.error}`)
-      }
-    } catch (error) {
-      console.error('Copy error:', error)
-      alert('Failed to copy file. Please try again.')
-    }
+  const handleCopy = (fileId: string) => {
+    setSelectedFiles([fileId]);
+    setShowCopyFile(true);
   }
 
   const handleDownloadFolder = async (fileId: string, fileName: string) => {
@@ -406,30 +382,20 @@ export default function FileManager({ onLogout }: FileManagerProps) {
   }
 
   const handleStreamVideo = (fileId: string, fileName: string) => {
-    setVideoPlayer({
-      isVisible: true,
-      fileId,
-      fileName
-    })
+    setVideoPlayer({ isVisible: true, fileId, fileName })
   }
 
   const handleViewImage = (fileId: string, fileName: string) => {
-    setImageViewer({
-      isVisible: true,
-      fileId,
-      fileName
-    })
+    setImageViewer({ isVisible: true, fileId, fileName })
   }
 
   const handleDoubleClick = (file: FileItem) => {
     if (file.isFolder) {
       navigateToFolder(file.id)
     } else {
-      // Check if it's a video file
       const videoExtensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv']
       const isVideo = videoExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
       
-      // Check if it's an image file
       const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg']
       const isImage = imageExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
       
@@ -438,7 +404,6 @@ export default function FileManager({ onLogout }: FileManagerProps) {
       } else if (isImage) {
         handleViewImage(file.id, file.name)
       } else {
-        // For other files, download them
         handleDownload(file.id, file.name)
       }
     }
@@ -471,14 +436,86 @@ export default function FileManager({ onLogout }: FileManagerProps) {
 
   const filteredFiles = files.filter(file =>
     file.name.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  );
+
+  const handleToggleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedFiles(filteredFiles.map(f => f.id));
+    } else {
+      setSelectedFiles([]);
+    }
+  };
+
+  const handleToggleSelect = (fileId: string) => {
+    if (selectedFiles.includes(fileId)) {
+      setSelectedFiles(selectedFiles.filter(id => id !== fileId));
+    } else {
+      setSelectedFiles([...selectedFiles, fileId]);
+    }
+  };
+
+  const handleDeleteMultiple = async () => {
+    if (confirm(`Are you sure you want to delete ${selectedFiles.length} selected files?`)) {
+      await Promise.all(selectedFiles.map(fileId =>
+        fetch(`${api.getUrl('/api/files')}/${fileId}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        })
+      ));
+      fetchFiles();
+      setSelectedFiles([]);
+    }
+  };
+
+  const handleCopyMultiple = () => {
+    if (selectedFiles.length > 0) {
+      setShowCopyFile(true);
+    }
+  };
+
+  const handleMoveMultiple = () => {
+    if (selectedFiles.length > 0) {
+      setShowMoveFile(true);
+    }
+  };
+
+  const handleDownloadMultiple = async () => {
+    try {
+      const response = await fetch(api.getUrl('/api/download/multiple'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ fileIds: selectedFiles }),
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'download.zip';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        setSelectedFiles([]);
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to download files: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Download multiple error:', error);
+      alert('Failed to download files. Please try again.');
+    }
+  };
 
   return (
     <div 
       className="min-h-screen bg-gray-50"
       onClick={closeContextMenu}
     >
-      {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -507,7 +544,6 @@ export default function FileManager({ onLogout }: FileManagerProps) {
         </div>
       </header>
 
-      {/* Authentication Error */}
       {authError && (
         <div className="bg-red-50 border-l-4 border-red-400 p-4">
           <div className="flex">
@@ -526,7 +562,6 @@ export default function FileManager({ onLogout }: FileManagerProps) {
         </div>
       )}
 
-      {/* Breadcrumb Navigation */}
       <div className="bg-gray-50 border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex items-center space-x-2">
@@ -538,30 +573,22 @@ export default function FileManager({ onLogout }: FileManagerProps) {
               <span className="text-sm">Root</span>
             </button>
             
-            {breadcrumb.length > 0 && (
-              <>
+            {breadcrumb.map((item, index) => (
+              <div key={item.id} className="flex items-center space-x-2">
                 <span className="text-gray-400">/</span>
-                {breadcrumb.map((item, index) => (
-                  <div key={item.id} className="flex items-center space-x-2">
-                    <button
-                      onClick={() => navigateToFolder(item.id)}
-                      className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                    >
-                      {item.name}
-                    </button>
-                    {index < breadcrumb.length - 1 && (
-                      <span className="text-gray-400">/</span>
-                    )}
-                  </div>
-                ))}
-              </>
-            )}
+                <button
+                  onClick={() => navigateToFolder(item.id)}
+                  className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  {item.name}
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
             <div className="flex items-center space-x-4">
@@ -608,9 +635,25 @@ export default function FileManager({ onLogout }: FileManagerProps) {
             </div>
           </div>
         </div>
+        {selectedFiles.length > 0 && (
+          <div className="bg-gray-100 border-t border-gray-200">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">
+                  {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button onClick={handleMoveMultiple} className="btn-secondary text-xs px-2 py-1">Move</button>
+                  <button onClick={handleCopyMultiple} className="btn-secondary text-xs px-2 py-1">Copy</button>
+                  <button onClick={handleDownloadMultiple} className="btn-secondary text-xs px-2 py-1">Download</button>
+                  <button onClick={handleDeleteMultiple} className="btn-danger text-xs px-2 py-1">Delete</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* File List */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           {loading ? (
@@ -630,6 +673,13 @@ export default function FileManager({ onLogout }: FileManagerProps) {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-6 py-3 w-4">
+                      <input
+                        type="checkbox"
+                        onChange={handleToggleSelectAll}
+                        checked={selectedFiles.length === filteredFiles.length && filteredFiles.length > 0}
+                      />
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Name
                     </th>
@@ -648,10 +698,17 @@ export default function FileManager({ onLogout }: FileManagerProps) {
                   {filteredFiles.map((file) => (
                     <tr 
                       key={file.id} 
-                      className="hover:bg-gray-50 cursor-pointer"
+                      className={`hover:bg-gray-50 cursor-pointer ${selectedFiles.includes(file.id) ? 'bg-blue-50' : ''}`}
                       onContextMenu={(e) => handleContextMenu(e, file)}
                       onDoubleClick={() => handleDoubleClick(file)}
                     >
+                      <td className="px-6 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedFiles.includes(file.id)}
+                          onChange={() => handleToggleSelect(file.id)}
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           {file.isFolder ? (
@@ -661,11 +718,9 @@ export default function FileManager({ onLogout }: FileManagerProps) {
                           )}
                           <button
                             onClick={() => file.isFolder && navigateToFolder(file.id)}
-                            className={`text-sm font-medium ${
-                              file.isFolder 
+                            className={`text-sm font-medium ${file.isFolder 
                                 ? 'text-blue-600 hover:text-blue-800 cursor-pointer' 
-                                : 'text-gray-900'
-                            }`}
+                                : 'text-gray-900'}`}
                           >
                             {file.name}
                           </button>
@@ -701,8 +756,8 @@ export default function FileManager({ onLogout }: FileManagerProps) {
                           
                           <button
                             onClick={() => {
-                              setMoveFileId(file.id)
-                              setShowMoveFile(true)
+                              setSelectedFiles([file.id]);
+                              setShowMoveFile(true);
                             }}
                             className="text-gray-400 hover:text-gray-600"
                             title="Move"
@@ -744,15 +799,20 @@ export default function FileManager({ onLogout }: FileManagerProps) {
           currentFolder={currentFolder}
         />
       )}
-      
-      {showMoveFile && moveFileId && (
+
+      {showMoveFile && (
         <MoveFile
-          onClose={() => {
-            setShowMoveFile(false)
-            setMoveFileId('')
-          }}
+          onClose={() => setShowMoveFile(false)}
           onMove={handleMoveFile}
-          fileId={moveFileId}
+          fileIds={selectedFiles}
+        />
+      )}
+
+      {showCopyFile && (
+        <CopyFile
+          onClose={() => setShowCopyFile(false)}
+          onCopy={handleCopyFile}
+          fileIds={selectedFiles}
         />
       )}
 
@@ -770,8 +830,8 @@ export default function FileManager({ onLogout }: FileManagerProps) {
           })
         }}
         onMove={(fileId) => {
-          setMoveFileId(fileId)
-          setShowMoveFile(true)
+          setSelectedFiles([fileId]);
+          setShowMoveFile(true);
         }}
         onCopy={handleCopy}
         onDownload={handleDownload}
@@ -782,41 +842,26 @@ export default function FileManager({ onLogout }: FileManagerProps) {
         onViewImage={handleViewImage}
       />
 
-      {/* Rename Dialog */}
       <RenameDialog
         isVisible={renameDialog.isVisible}
         currentName={renameDialog.currentName}
         fileId={renameDialog.fileId}
-        onClose={() => setRenameDialog({
-          isVisible: false,
-          fileId: '',
-          currentName: ''
-        })}
+        onClose={() => setRenameDialog({ isVisible: false, fileId: '', currentName: '' })}
         onRename={handleRename}
       />
 
-      {/* Video Player */}
       <VideoPlayer
         isVisible={videoPlayer.isVisible}
         fileId={videoPlayer.fileId}
         fileName={videoPlayer.fileName}
-        onClose={() => setVideoPlayer({
-          isVisible: false,
-          fileId: '',
-          fileName: ''
-        })}
+        onClose={() => setVideoPlayer({ isVisible: false, fileId: '', fileName: '' })}
       />
 
-      {/* Image Viewer */}
       <ImageViewer
         isVisible={imageViewer.isVisible}
         fileId={imageViewer.fileId}
         fileName={imageViewer.fileName}
-        onClose={() => setImageViewer({
-          isVisible: false,
-          fileId: '',
-          fileName: ''
-        })}
+        onClose={() => setImageViewer({ isVisible: false, fileId: '', fileName: '' })}
       />
     </div>
   )
