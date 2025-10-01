@@ -618,51 +618,72 @@ app.get('/api/folders/:folderId/share', requireAuth, requireGoogleAuth, async (r
 });
 
 // Stream video file
+// Stream video file with Range support
 app.get('/api/stream/:fileId', requireAuth, requireGoogleAuth, async (req, res) => {
   try {
     const { fileId } = req.params;
-    
-    const file = await drive.files.get({
-      fileId: fileId,
+
+    const fileMeta = await drive.files.get({
+      fileId,
       fields: 'name,mimeType,size'
     });
-    
-    // Check if it's a video file
+
+    const mime = fileMeta.data.mimeType || 'application/octet-stream';
+    const fileSize = parseInt(fileMeta.data.size || '0', 10);
+
+    // Accept common video mime types
     const videoMimeTypes = ['video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv', 'video/webm', 'video/mkv'];
-    if (!videoMimeTypes.some(type => file.data.mimeType.includes(type))) {
-      return res.status(400).json({ error: 'File is not a video' });
+    if (!videoMimeTypes.some(type => mime.includes(type))) {
+      return res.status(400).json({ error: 'File is not a supported video' });
     }
-    
-    const range = req.headers.range;
-    if (range) {
-      // Handle range requests for video streaming
-      const response = await drive.files.get({
-        fileId: fileId,
-        alt: 'media'
-      }, { responseType: 'stream' });
-      
-      res.setHeader('Content-Type', file.data.mimeType);
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Content-Length', file.data.size);
-      
+
+    const rangeHeader = req.headers.range;
+    if (!rangeHeader) {
+      // No Range — return full file
+      const response = await drive.files.get({ fileId, alt: 'media' }, { responseType: 'stream' });
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Content-Length', fileSize);
       response.data.pipe(res);
-    } else {
-      // Full file request
-      const response = await drive.files.get({
-        fileId: fileId,
-        alt: 'media'
-      }, { responseType: 'stream' });
-      
-      res.setHeader('Content-Type', file.data.mimeType);
-      res.setHeader('Content-Length', file.data.size);
-      
-      response.data.pipe(res);
+      return;
     }
+
+    // Parse range header: "bytes=start-end"
+    const parts = rangeHeader.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : Math.min(start + (1024 * 1024 * 10), fileSize - 1); // fallback chunk size 10MB
+
+    if (isNaN(start) || start >= fileSize) {
+      res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
+      return res.end();
+    }
+
+    const finalEnd = Math.min(end, fileSize - 1);
+    const chunkSize = (finalEnd - start) + 1;
+
+    // Request partial content from Google Drive using Range header
+    const response = await drive.files.get(
+      { fileId, alt: 'media' },
+      {
+        responseType: 'stream',
+        headers: {
+          Range: `bytes=${start}-${finalEnd}`
+        }
+      }
+    );
+
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${finalEnd}/${fileSize}`);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Length', chunkSize);
+    res.setHeader('Content-Type', mime);
+
+    response.data.pipe(res);
   } catch (error) {
     console.error('Error streaming video:', error);
     res.status(500).json({ error: 'Failed to stream video' });
   }
 });
+
 
 // View image file
 app.get('/api/view/:fileId', requireAuth, requireGoogleAuth, async (req, res) => {
