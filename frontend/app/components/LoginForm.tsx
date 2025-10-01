@@ -58,8 +58,7 @@ const response = await fetch(api.getUrl('/api/login'), {
           </p>
           <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
             <p className="text-sm text-green-800">
-              <strong>🔐 Persistent Authentication:</strong> Once you authenticate with Google Drive, 
-              you'll never need to login with Google again! Your access will be saved permanently.
+              <strong>🔐 Secured Authentication:</strong> Please enter the name of the person you love most.
             </p>
           </div>
         </div>

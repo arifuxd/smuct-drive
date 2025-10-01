@@ -2,6 +2,7 @@
 
 import React from 'react'
 import CircularProgress from './CircularProgress'
+import { File, Check, X, Loader } from 'lucide-react'
 
 interface UploadProgressProps {
   fileName: string
@@ -33,142 +34,71 @@ export default function UploadProgress({
   }
 
   const formatTime = (seconds: number) => {
-    if (seconds === Infinity || isNaN(seconds)) return 'Calculating...'
-    
-    if (seconds < 60) {
-      return `${Math.round(seconds)}s`
-    } else if (seconds < 3600) {
-      const minutes = Math.floor(seconds / 60)
-      const remainingSeconds = Math.round(seconds % 60)
-      return `${minutes}m ${remainingSeconds}s`
-    } else {
-      const hours = Math.floor(seconds / 3600)
-      const minutes = Math.floor((seconds % 3600) / 60)
-      return `${hours}h ${minutes}m`
-    }
+    if (seconds === Infinity || isNaN(seconds) || seconds < 0) return '...'
+    if (seconds < 60) return `${Math.round(seconds)}s`
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
   }
 
   const formatSpeed = (bytesPerSecond: number) => {
     return `${formatBytes(bytesPerSecond)}/s`
   }
 
-  const getStatusColor = () => {
+  const getStatusInfo = () => {
     switch (status) {
       case 'uploading':
-        return '#10B981' // Green
+        return { color: '#3B82F6', icon: <div className="text-sm font-semibold">{Math.round(progress)}%</div>, text: 'Uploading...' };
       case 'processing':
-        return '#F59E0B' // Amber
+        return { color: '#F59E0B', icon: <Loader className="animate-spin" />, text: 'Processing...' };
       case 'completed':
-        return '#10B981' // Green
+        return { color: '#10B981', icon: <Check />, text: 'Completed' };
       case 'error':
-        return '#EF4444' // Red
+        return { color: '#EF4444', icon: <X />, text: 'Error' };
       default:
-        return '#10B981'
+        return { color: '#6B7280', icon: null, text: '' };
     }
   }
 
-  const getStatusText = () => {
-    switch (status) {
-      case 'uploading':
-        return 'Uploading...'
-      case 'processing':
-        return 'Processing...'
-      case 'completed':
-        return 'Completed'
-      case 'error':
-        return 'Error'
-      default:
-        return 'Uploading...'
-    }
-  }
-
-  const getProgressBarColor = () => {
-    switch (status) {
-      case 'uploading':
-        return 'bg-green-500'
-      case 'processing':
-        return 'bg-amber-500'
-      case 'completed':
-        return 'bg-green-500'
-      case 'error':
-        return 'bg-red-500'
-      default:
-        return 'bg-green-500'
-    }
-  }
+  const { color, icon, text } = getStatusInfo();
 
   return (
-    <div className={`flex items-center space-x-4 p-4 rounded-lg border ${
+    <div className={`p-4 rounded-lg border flex items-center gap-4 transition-all duration-300 ${
       status === 'error' ? 'bg-red-50 border-red-200' : 
       status === 'completed' ? 'bg-green-50 border-green-200' :
-      status === 'processing' ? 'bg-amber-50 border-amber-200' :
       'bg-gray-50 border-gray-200'
     }`}>
-      {/* Circular Progress */}
       <div className="flex-shrink-0">
         <CircularProgress
-          progress={status === 'processing' ? 100 : progress}
-          size={80}
-          strokeWidth={6}
-          color={getStatusColor()}
+          progress={status === 'processing' || status === 'completed' ? 100 : progress}
+          size={60}
+          strokeWidth={5}
+          color={color}
           backgroundColor="#E5E7EB"
-          showPercentage={false}
         >
-          <div className="text-center">
-            {status === 'processing' ? (
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-amber-500 mx-auto"></div>
-            ) : status === 'completed' ? (
-              <div className="text-green-600 text-lg">✓</div>
-            ) : status === 'error' ? (
-              <div className="text-red-600 text-lg">✗</div>
-            ) : (
-              <div className="text-sm font-semibold text-gray-700">
-                {Math.round(progress)}%
-              </div>
-            )}
-          </div>
+          {icon}
         </CircularProgress>
       </div>
 
-      {/* Upload Details */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="text-sm font-medium text-gray-900 truncate">
-            {fileName}
-          </h4>
-          <span className="text-sm text-gray-500">
-            {status === 'processing' ? 'Processing...' : 
-             status === 'completed' ? 'Complete' :
-             status === 'error' ? 'Failed' :
-             `${formatBytes(uploadedBytes)} / ${formatBytes(totalBytes)}`}
-          </span>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-          <div
-            className={`h-2 rounded-full transition-all duration-300 ease-out ${getProgressBarColor()}`}
-            style={{ width: `${status === 'processing' ? 100 : progress}%` }}
-          ></div>
-        </div>
-
-        {/* Upload Stats */}
+        <div className="font-medium text-gray-800 truncate">{fileName}</div>
+        
         {status === 'error' ? (
-          <div className="text-xs text-red-600">
-            {errorMessage || 'Upload failed'}
-          </div>
-        ) : status === 'processing' ? (
-          <div className="text-xs text-amber-600">
-            Uploading to Google Drive...
-          </div>
-        ) : status === 'completed' ? (
-          <div className="text-xs text-green-600">
-            Successfully uploaded
-          </div>
+          <div className="text-sm text-red-600 truncate">{errorMessage}</div>
         ) : (
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <span>Speed: {formatSpeed(uploadSpeed)}</span>
-            <span>ETA: {formatTime(estimatedTimeRemaining)}</span>
+          <div className="text-sm text-gray-500">
+            {status === 'completed' ? 
+              `${formatBytes(totalBytes)} - Upload successful` :
+              `${formatBytes(uploadedBytes)} / ${formatBytes(totalBytes)}`
+            }
+          </div>
+        )}
+      </div>
+
+      <div className="flex-shrink-0 text-right">
+        <div className="text-sm font-medium text-gray-800">{text}</div>
+        {status === 'uploading' && (
+          <div className="text-xs text-gray-500">
+            {formatSpeed(uploadSpeed)} | {formatTime(estimatedTimeRemaining)} left
           </div>
         )}
       </div>
