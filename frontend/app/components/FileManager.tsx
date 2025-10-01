@@ -24,6 +24,9 @@ import ContextMenu from './ContextMenu'
 import RenameDialog from './RenameDialog'
 import VideoPlayer from './VideoPlayer'
 import ImageViewer from './ImageViewer'
+import ActionDialog from './ActionDialog'
+import InfoDialog from './InfoDialog'
+import { getFileIcon } from '../../lib/icons'
 import api from '../../lib/api'
 
 
@@ -99,6 +102,9 @@ export default function FileManager({ onLogout }: FileManagerProps) {
     fileId: '',
     fileName: ''
   })
+  const [deleteDialog, setDeleteDialog] = useState<{ isVisible: boolean; fileId: string }>({ isVisible: false, fileId: '' })
+  const [infoDialog, setInfoDialog] = useState<{ isVisible: boolean; title: string; message: string }>({ isVisible: false, title: '', message: '' })
+  const [deleteMultipleDialog, setDeleteMultipleDialog] = useState<{ isVisible: boolean }>({ isVisible: false })
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
@@ -213,8 +219,10 @@ export default function FileManager({ onLogout }: FileManagerProps) {
   };
 
   const handleDelete = async (fileId: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) return
+    setDeleteDialog({ isVisible: true, fileId })
+  }
 
+  const confirmDelete = async (fileId: string) => {
     try {
       const response = await fetch(`${api.getUrl('/api/files')}/${fileId}`, {
         method: 'DELETE',
@@ -240,7 +248,13 @@ export default function FileManager({ onLogout }: FileManagerProps) {
       if (response.ok) {
         const data = await response.json()
         await navigator.clipboard.writeText(data.shareableLink)
-        alert(`Download link copied to clipboard!\n\nFile: ${fileName}\nLink: ${data.shareableLink}`)
+        setInfoDialog({
+          isVisible: true,
+          title: 'Link Copied',
+          message: `Download link for ${fileName}`,
+          link: data.shareableLink,
+        })
+
       } else {
         const errorData = await response.json()
         alert(`Failed to get shareable link: ${errorData.error}`)
@@ -312,11 +326,21 @@ export default function FileManager({ onLogout }: FileManagerProps) {
         fetchFiles()
       } else {
         const errorData = await response.json()
-        alert(`Failed to rename: ${errorData.error}`)
+        setInfoDialog({
+          isVisible: true,
+          title: 'Rename Failed',
+          message: errorData.error,
+        })
+
       }
     } catch (error) {
       console.error('Rename error:', error)
-      alert('Failed to rename file. Please try again.')
+      setInfoDialog({
+        isVisible: true,
+        title: 'Rename Failed',
+        message: 'Failed to rename file. Please try again.',
+      })
+
     }
   }
 
@@ -344,7 +368,13 @@ export default function FileManager({ onLogout }: FileManagerProps) {
       if (response.ok) {
         const data = await response.json()
         await navigator.clipboard.writeText(data.shareableLink)
-        alert(`ZIP download link copied to clipboard!\n\nFolder: ${fileName}\nLink: ${data.shareableLink}`)
+        setInfoDialog({
+          isVisible: true,
+          title: 'Link Copied',
+          message: `ZIP download link for ${fileName}`,
+          link: data.shareableLink,
+        })
+
       } else {
         const errorData = await response.json()
         alert(`Failed to get shareable link: ${errorData.error}`)
@@ -429,16 +459,18 @@ export default function FileManager({ onLogout }: FileManagerProps) {
   };
 
   const handleDeleteMultiple = async () => {
-    if (confirm(`Are you sure you want to delete ${selectedFiles.length} selected files?`)) {
-      await Promise.all(selectedFiles.map(fileId =>
-        fetch(`${api.getUrl('/api/files')}/${fileId}`, {
-          method: 'DELETE',
-          credentials: 'include'
-        })
-      ));
-      fetchFiles();
-      setSelectedFiles([]);
-    }
+    setDeleteMultipleDialog({ isVisible: true })
+  }
+
+  const confirmDeleteMultiple = async () => {
+    await Promise.all(selectedFiles.map(fileId =>
+      fetch(`${api.getUrl('/api/files')}/${fileId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+    ));
+    fetchFiles();
+    setSelectedFiles([]);
   };
 
   const handleCopyMultiple = () => {
@@ -667,11 +699,7 @@ export default function FileManager({ onLogout }: FileManagerProps) {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          {file.isFolder ? (
-                            <Folder className="h-5 w-5 text-blue-500 mr-3" />
-                          ) : (
-                            <File className="h-5 w-5 text-gray-400 mr-3" />
-                          )}
+                          {getFileIcon(file.name, file.isFolder)}
                           <button
                             onClick={() => file.isFolder && navigateToFolder(file.id)}
                             className={`text-sm font-medium ${file.isFolder 
@@ -818,6 +846,31 @@ export default function FileManager({ onLogout }: FileManagerProps) {
         fileId={imageViewer.fileId}
         fileName={imageViewer.fileName}
         onClose={() => setImageViewer({ isVisible: false, fileId: '', fileName: '' })}
+      />
+
+      <ActionDialog
+        isVisible={deleteDialog.isVisible}
+        onClose={() => setDeleteDialog({ isVisible: false, fileId: '' })}
+        onConfirm={() => confirmDelete(deleteDialog.fileId)}
+        title="Delete File"
+        message="Are you sure you want to delete this file?"
+        confirmText="Delete"
+      />
+
+      <ActionDialog
+        isVisible={deleteMultipleDialog.isVisible}
+        onClose={() => setDeleteMultipleDialog({ isVisible: false })}
+        onConfirm={confirmDeleteMultiple}
+        title={`Delete ${selectedFiles.length} Files`}
+        message={`Are you sure you want to delete ${selectedFiles.length} selected files?`}
+        confirmText="Delete"
+      />
+
+      <InfoDialog
+        isVisible={infoDialog.isVisible}
+        onClose={() => setInfoDialog({ isVisible: false, title: '', message: '' })}
+        title={infoDialog.title}
+        message={infoDialog.message}
       />
     </div>
   )
