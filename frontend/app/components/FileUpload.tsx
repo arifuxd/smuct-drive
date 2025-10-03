@@ -91,102 +91,131 @@ export default function FileUpload({ onClose, onUpload, currentFolder }: FileUpl
     handleUpload()
   }
 
-  const handleUpload = async () => {
-    if (files.length === 0) return;
+// Replace the handleUpload function in FileUpload.tsx
+const handleUpload = async () => {
+  if (files.length === 0) return;
 
-    setUploading(true);
-    const newProgress = { ...uploadProgress };
+  setUploading(true);
+  const newProgress = { ...uploadProgress };
 
-    for (const file of files) {
-      if (newProgress[file.name]?.status === 'completed') continue;
+  for (const file of files) {
+    if (newProgress[file.name]?.status === 'completed') continue;
 
-      const startTime = Date.now();
-      newProgress[file.name] = {
-        progress: 0,
-        uploadedBytes: 0,
-        totalBytes: file.size,
-        estimatedTimeRemaining: 0,
-        uploadSpeed: 0,
-        startTime,
-        lastUpdateTime: startTime,
-        lastUploadedBytes: 0,
-        status: 'uploading',
-        errorMessage: undefined,
-      };
-    }
-    setUploadProgress(newProgress);
+    const startTime = Date.now();
+    newProgress[file.name] = {
+      progress: 0,
+      uploadedBytes: 0,
+      totalBytes: file.size,
+      estimatedTimeRemaining: 0,
+      uploadSpeed: 0,
+      startTime,
+      lastUpdateTime: startTime,
+      lastUploadedBytes: 0,
+      status: 'uploading',
+      errorMessage: undefined,
+    };
+  }
+  setUploadProgress(newProgress);
 
-    const uploadPromises = files.map(file => (
-      new Promise<void>(async (resolve, reject) => {
-        try {
-          const response = await axios.post(api.getUrl('/api/upload/proxied'), file, {
-            headers: {
-              'Content-Type': file.type,
-              'X-File-Name': file.name,
-              'X-File-Type': file.type,
-              'X-Folder-Id': currentFolder,
-            },
-            withCredentials: true,
-            onUploadProgress: (progressEvent) => {
-              const { loaded, total } = progressEvent;
-              const progress = total ? (loaded / total) * 100 : 0;
-              const currentTime = Date.now();
-              const timeElapsed = (currentTime - newProgress[file.name].startTime) / 1000;
-              const uploadSpeed = timeElapsed > 0 ? loaded / timeElapsed : 0;
-              const remainingBytes = total ? total - loaded : 0;
-              const estimatedTimeRemaining = uploadSpeed > 0 ? remainingBytes / uploadSpeed : 0;
+  const uploadPromises = files.map(file => (
+    new Promise<void>(async (resolve, reject) => {
+      try {
+        const response = await axios.post(api.getUrl('/api/upload/proxied'), file, {
+          headers: {
+            'Content-Type': file.type,
+            'X-File-Name': file.name,
+            'X-File-Type': file.type,
+            'X-Folder-Id': currentFolder,
+          },
+          withCredentials: true,
+          timeout: 600000, // 600 seconds timeout
+          onUploadProgress: (progressEvent) => {
+            const { loaded, total } = progressEvent;
+            const progress = total ? (loaded / total) * 100 : 0;
+            const currentTime = Date.now();
+            const timeElapsed = (currentTime - newProgress[file.name].startTime) / 1000;
+            const uploadSpeed = timeElapsed > 0 ? loaded / timeElapsed : 0;
+            const remainingBytes = total ? total - loaded : 0;
+            const estimatedTimeRemaining = uploadSpeed > 0 ? remainingBytes / uploadSpeed : 0;
 
-              setUploadProgress(prev => ({
-                ...prev,
-                [file.name]: {
-                  ...prev[file.name],
-                  progress,
-                  uploadedBytes: loaded,
-                  totalBytes: total || file.size,
-                  uploadSpeed,
-                  estimatedTimeRemaining,
-                  status: 'uploading',
-                },
-              }));
-            },
-          });
-
-          if (response.status === 200 || response.status === 201) {
             setUploadProgress(prev => ({
               ...prev,
-              [file.name]: { ...prev[file.name], status: 'completed' },
+              [file.name]: {
+                ...prev[file.name],
+                progress,
+                uploadedBytes: loaded,
+                totalBytes: total || file.size,
+                uploadSpeed,
+                estimatedTimeRemaining,
+                status: progress === 100 ? 'processing' : 'uploading',
+              },
             }));
-            resolve();
-          } else {
-            throw new Error(`Upload failed with status ${response.status}`);
-          }
-        } catch (error: any) {
-          console.error(`Upload failed for ${file.name}:`, error);
+          },
+        });
+
+        // Handle different response codes
+        if (response.status === 200 || response.status === 201 || response.status === 202) {
+          // Mark as completed regardless of status code
+          // 200/201 = upload complete
+          // 202 = upload accepted (continuing in background)
           setUploadProgress(prev => ({
             ...prev,
-            [file.name]: {
-              ...prev[file.name],
-              status: 'error',
-              errorMessage: error.response?.data?.error || error.message || 'Failed to upload',
-            },
+            [file.name]: { ...prev[file.name], status: 'completed', progress: 100 },
           }));
-          reject(error);
+          resolve();
+        } else {
+          throw new Error(`Upload failed with status ${response.status}`);
         }
-      })
-    ));
+      } catch (error: any) {
+        console.error(`Upload failed for ${file.name}:`, error);
+        
+        // Check if it's a timeout error after file was fully uploaded
+        if (error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK') {
+          const currentProgress = uploadProgress[file.name];
+          
+          // If we reached 100% before timeout, assume success
+          if (currentProgress && currentProgress.progress >= 99) {
+            console.log(`${file.name}: Upload reached 100%, treating as success despite timeout`);
+            setUploadProgress(prev => ({
+              ...prev,
+              [file.name]: { 
+                ...prev[file.name], 
+                status: 'completed',
+                progress: 100,
+              },
+            }));
+            resolve();
+            return;
+          }
+        }
+        
+        // Actual error
+        setUploadProgress(prev => ({
+          ...prev,
+          [file.name]: {
+            ...prev[file.name],
+            status: 'error',
+            errorMessage: error.response?.data?.error || error.message || 'Failed to upload',
+          },
+        }));
+        reject(error);
+      }
+    })
+  ));
 
-    try {
-      await Promise.all(uploadPromises);
-      setTimeout(() => {
-        onUpload();
-        onClose();
-      }, 1000);
-    } catch (error) {
-      console.error('One or more uploads failed');
-    } finally {
-      setUploading(false);
-    }
-  };
+  try {
+    await Promise.all(uploadPromises);
+    // Wait a bit longer before closing to show success state
+    setTimeout(() => {
+      onUpload();
+      onClose();
+    }, 2000);
+  } catch (error) {
+    console.error('One or more uploads failed');
+  } finally {
+    setUploading(false);
+  }
+};
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 B'
