@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
-const multer = require('multer');
+const busboy = require('busboy');
 const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
@@ -39,11 +39,7 @@ app.use(session({
   } // 24 hours
 }));
 
-// Configure multer for file uploads
-const upload = multer({ 
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 2000 * 1024 * 1024 } // 2000MB limit
-});
+
 
 // Google Drive OAuth setup
 const oauth2Client = new google.auth.OAuth2(
@@ -395,265 +391,72 @@ app.get('/api/files', requireAuth, requireGoogleAuth, async (req, res) => {
   }
 });
 
-// Initiate file upload and get resumable URL
-app.post('/api/upload/proxied', requireAuth, requireGoogleAuth, (req, res) => {
+
+
+
+
+
+// Upload file with busboy
+app.post('/api/upload', requireAuth, requireGoogleAuth, (req, res) => {
   try {
-    const {
-      'x-file-name': fileName,
-      'x-file-type': fileType,
-      'x-folder-id': folderId,
-      'content-length': contentLength,
-    } = req.headers;
+    const bb = busboy({ headers: req.headers });
+    let folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-    const targetFolderId = (folderId && typeof folderId === 'string' && folderId.trim() !== '') 
-      ? folderId 
-      : process.env.GOOGLE_DRIVE_FOLDER_ID;
+    bb.on('field', (fieldname, val) => {
+      if (fieldname === 'folderId') {
+        folderId = val;
+      }
+    });
 
-    if (!fileName || !fileType || !contentLength) {
-      return res.status(400).json({ error: 'File name, type, and content length are required in headers' });
-    }
+    bb.on('file', (fieldname, file, filename, encoding, mimetype) => {
+      const fileMetadata = {
+        name: filename.filename,
+        parents: [folderId]
+      };
 
-    if (!targetFolderId || targetFolderId.trim() === '') {
-      return res.status(400).json({ error: 'Google Drive folder ID not configured' });
-    }
+      const media = {
+        mimeType: mimetype,
+        body: file
+      };
 
-    const fileMetadata = {
-      name: Array.isArray(fileName) ? fileName[0] : fileName,
-      parents: [targetFolderId],
-    };
-
-    const accessToken = oauth2Client.credentials.access_token;
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Google Drive authentication is missing access token.' });
-    }
-
-    const https = require('https');
-    let responseAlreadySent = false;
-
-    // Step 1: Initiate Resumable Upload
-    const initiateOptions = {
-      method: 'POST',
-      hostname: 'www.googleapis.com',
-      path: '/upload/drive/v3/files?uploadType=resumable',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json; charset=UTF-8',
-        'X-Upload-Content-Type': fileType,
-      },
-    };
-
-    const initiateRequest = https.request(initiateOptions, (initiateRes) => {
-      if (initiateRes.statusCode === 200) {
-        const uploadUrl = initiateRes.headers.location;
-        if (uploadUrl) {
-          const { host, pathname, search } = new URL(uploadUrl);
-          const uploadOptions = {
-            method: 'PUT',
-            hostname: host,
-            path: `${pathname}${search}`,
-            headers: {
-              'Content-Length': contentLength,
-            },
-          };
-
-          const uploadRequest = https.request(uploadOptions, (uploadRes) => {
-            let responseBody = '';
-            
-            // Track upload progress
-            let bytesUploaded = 0;
-            const totalBytes = parseInt(contentLength, 10);
-            
-            uploadRes.on('data', (chunk) => {
-              responseBody += chunk;
-              bytesUploaded += chunk.length;
-              
-              // Send early response when we're confident upload is succeeding
-              // Google sends the response data as the upload completes
-              if (!responseAlreadySent && bytesUploaded > 100) {
-                responseAlreadySent = true;
-                res.status(200).json({ 
-                  success: true, 
-                  message: 'Upload initiated successfully',
-                  note: 'File is being processed by Google Drive'
-                });
-              }
-            });
-            
-            uploadRes.on('end', () => {
-              if (uploadRes.statusCode === 200 || uploadRes.statusCode === 201) {
-                // Log success for server records
-                try {
-                  const fileData = JSON.parse(responseBody);
-                  console.log('✅ Upload completed successfully:', fileData.name, fileData.id);
-                } catch (e) {
-                  console.log('✅ Upload completed successfully');
-                }
-                
-                // Send response if not already sent
-                if (!responseAlreadySent && !res.headersSent) {
-                  res.status(200).json({ 
-                    success: true, 
-                    data: responseBody 
-                  });
-                }
-              } else {
-                console.error(`Google Drive upload failed with status ${uploadRes.statusCode}:`, responseBody);
-                if (!res.headersSent) {
-                  res.status(uploadRes.statusCode).json({ 
-                    error: 'Upload to Google Drive failed', 
-                    details: responseBody 
-                  });
-                }
-              }
-            });
-          });
-
-          uploadRequest.on('error', (error) => {
-            console.error('Error streaming to Google Drive:', error);
+      drive.files.create(
+        {
+          resource: fileMetadata,
+          media: media,
+          fields: 'id,name,mimeType,size,createdTime'
+        },
+        (err, file) => {
+          if (err) {
+            console.error('Error uploading file to Google Drive:', err);
             if (!res.headersSent) {
-              res.status(500).json({ error: 'Failed to stream to Google Drive' });
+              res.status(500).json({ error: 'Failed to upload file to Google Drive' });
             }
-          });
-
-          // Set a timeout to send response if Google takes too long
-          const responseTimeout = setTimeout(() => {
-            if (!responseAlreadySent && !res.headersSent) {
-              responseAlreadySent = true;
-              res.status(202).json({ 
-                success: true, 
-                message: 'Upload in progress',
-                note: 'Large file upload continuing in background'
-              });
-              console.log('⏱️ Sent early response due to timeout - upload continuing');
-            }
-          }, 25000); // 25 seconds (before Render's 30s timeout)
-
-          uploadRequest.on('close', () => {
-            clearTimeout(responseTimeout);
-          });
-
-          req.pipe(uploadRequest);
-
-        } else {
+            return;
+          }
           if (!res.headersSent) {
-            res.status(500).json({ error: 'Could not get upload URL from Google' });
+            res.json({
+              id: file.data.id,
+              name: file.data.name,
+              mimeType: file.data.mimeType,
+              size: file.data.size,
+              createdTime: file.data.createdTime
+            });
           }
         }
-      } else {
-        let errorData = '';
-        initiateRes.on('data', (chunk) => {
-          errorData += chunk;
-        });
-        initiateRes.on('end', () => {
-          console.error(`Google Drive initiation failed with status ${initiateRes.statusCode}:`, errorData);
-          if (!res.headersSent) {
-            res.status(initiateRes.statusCode).json({ 
-              error: 'Failed to initiate upload with Google', 
-              details: errorData 
-            });
-          }
-        });
-      }
+      );
     });
 
-    initiateRequest.on('error', (error) => {
-      console.error('Error making request to Google for upload initiation:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Failed to make request to Google for upload initiation' });
-      }
+    bb.on('finish', () => {
+      console.log('Busboy finished parsing the form.');
     });
 
-    initiateRequest.write(JSON.stringify(fileMetadata));
-    initiateRequest.end();
+    req.pipe(bb);
 
   } catch (error) {
-    console.error('Error in proxied upload:', error);
+    console.error('Error in /api/upload route:', error);
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed in proxied upload' });
+      res.status(500).json({ error: 'An unexpected error occurred during file upload.' });
     }
-  }
-});
-
-// Upload file
-app.post('/api/upload', requireAuth, requireGoogleAuth, upload.single('file'), async (req, res) => {
-  try {
-    console.log('Upload request received');
-    console.log('File:', req.file ? req.file.originalname : 'No file');
-    console.log('Body:', req.body);
-    
-    if (!req.file) {
-      console.log('No file provided in request');
-      return res.status(400).json({ error: 'No file provided' });
-    }
-    
-    const { folderId } = req.body;
-    const targetFolderId = folderId && folderId.trim() !== '' ? folderId : process.env.GOOGLE_DRIVE_FOLDER_ID;
-    
-    console.log('Folder ID from request:', folderId);
-    console.log('Environment folder ID:', process.env.GOOGLE_DRIVE_FOLDER_ID);
-    console.log('Target folder ID:', targetFolderId);
-    
-    // Validate folder ID
-    if (!targetFolderId || targetFolderId.trim() === '') {
-      console.log('Folder ID validation failed');
-      return res.status(400).json({ error: 'Google Drive folder ID not configured' });
-    }
-    
-    // Test if folder exists
-    try {
-      console.log('Testing folder access for ID:', targetFolderId);
-      const folderTest = await drive.files.get({
-        fileId: targetFolderId,
-        fields: 'id,name,mimeType'
-      });
-      console.log('Folder found:', folderTest.data);
-    } catch (folderError) {
-      console.error('Folder access error:', folderError.message);
-      return res.status(400).json({ 
-        error: `Folder not found or no access: ${folderError.message}. Please check your folder ID and permissions.` 
-      });
-    }
-    
-    const fileMetadata = {
-      name: req.file.originalname,
-      parents: [targetFolderId]
-    };
-    
-    console.log('File metadata:', fileMetadata);
-    console.log('File size:', req.file.size);
-    console.log('File mimetype:', req.file.mimetype);
-    
-    // Convert buffer to stream for Google Drive API
-    const { Readable } = require('stream');
-    const stream = new Readable();
-    stream.push(req.file.buffer);
-    stream.push(null);
-    
-    const media = {
-      mimeType: req.file.mimetype,
-      body: stream
-    };
-    
-    console.log('Uploading to Google Drive...');
-    const response = await drive.files.create({
-      resource: fileMetadata,
-      media: media,
-      fields: 'id,name,mimeType,size,createdTime'
-    });
-    
-    console.log('Upload successful:', response.data);
-    
-    res.json({
-      id: response.data.id,
-      name: response.data.name,
-      mimeType: response.data.mimeType,
-      size: response.data.size,
-      createdTime: response.data.createdTime
-    });
-  } catch (error) {
-    console.error('Error uploading file:', error);
-    console.error('Error details:', error.message);
-    res.status(500).json({ error: 'Failed to upload file: ' + error.message });
   }
 });
 

@@ -120,12 +120,13 @@ const handleUpload = async () => {
   const uploadPromises = files.map(file => (
     new Promise<void>(async (resolve, reject) => {
       try {
-        const response = await axios.post(api.getUrl('/api/upload/proxied'), file, {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('folderId', currentFolder);
+
+        const response = await axios.post(api.getUrl('/api/upload'), formData, {
           headers: {
-            'Content-Type': file.type,
-            'X-File-Name': file.name,
-            'X-File-Type': file.type,
-            'X-Folder-Id': currentFolder,
+            'Content-Type': 'multipart/form-data',
           },
           withCredentials: true,
           timeout: 600000, // 600 seconds timeout
@@ -153,11 +154,7 @@ const handleUpload = async () => {
           },
         });
 
-        // Handle different response codes
-        if (response.status === 200 || response.status === 201 || response.status === 202) {
-          // Mark as completed regardless of status code
-          // 200/201 = upload complete
-          // 202 = upload accepted (continuing in background)
+        if (response.status === 200 || response.status === 201) {
           setUploadProgress(prev => ({
             ...prev,
             [file.name]: { ...prev[file.name], status: 'completed', progress: 100 },
@@ -168,28 +165,6 @@ const handleUpload = async () => {
         }
       } catch (error: any) {
         console.error(`Upload failed for ${file.name}:`, error);
-        
-        // Check if it's a timeout error after file was fully uploaded
-        if (error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK') {
-          const currentProgress = uploadProgress[file.name];
-          
-          // If we reached 100% before timeout, assume success
-          if (currentProgress && currentProgress.progress >= 99) {
-            console.log(`${file.name}: Upload reached 100%, treating as success despite timeout`);
-            setUploadProgress(prev => ({
-              ...prev,
-              [file.name]: { 
-                ...prev[file.name], 
-                status: 'completed',
-                progress: 100,
-              },
-            }));
-            resolve();
-            return;
-          }
-        }
-        
-        // Actual error
         setUploadProgress(prev => ({
           ...prev,
           [file.name]: {
@@ -205,7 +180,6 @@ const handleUpload = async () => {
 
   try {
     await Promise.all(uploadPromises);
-    // Wait a bit longer before closing to show success state
     setTimeout(() => {
       onUpload();
       onClose();

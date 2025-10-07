@@ -15,7 +15,8 @@
     "express-session": "^1.18.2",
     "googleapis": "^161.0.0",
     "multer": "^2.0.2",
-    "open": "^10.2.0"
+    "open": "^10.2.0",
+    "busboy": "^1.6.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
