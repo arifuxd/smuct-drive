@@ -129,7 +129,7 @@ const handleUpload = async () => {
             'Content-Type': 'multipart/form-data',
           },
           withCredentials: true,
-          timeout: 600000, // 600 seconds timeout
+          timeout: 6000000, // 100 minitue timeout
           onUploadProgress: (progressEvent) => {
             const { loaded, total } = progressEvent;
             const progress = total ? (loaded / total) * 100 : 0;
